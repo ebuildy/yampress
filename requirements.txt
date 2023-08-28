@@ -1,0 +1,5 @@
+click==8.1.7
+loguru==0.7.0
+prettytable==3.8.0
+PyYAML==6.0.1
+wcwidth==0.2.6

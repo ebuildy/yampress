@@ -1,0 +1,18 @@
+spec:
+  initContainers:
+  - name: a
+    resources:
+      requests: { cpu: 1}
+    securityContext:
+      readOnlyRootFilesystem: true
+  containers: 
+  - name: a
+    resources:
+      requests: { cpu: 1}
+    securityContext:
+      readOnlyRootFilesystem: true
+  - name: b
+    resources:
+      requests: { cpu: 1}
+    securityContext:
+      readOnlyRootFilesystem: true
