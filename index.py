@@ -3,6 +3,7 @@ import sys
 import hashlib
 import json
 import click
+import time
 
 from prettytable import PrettyTable
 from loguru import logger
@@ -91,29 +92,6 @@ class Compressor:
     c = self.find_candidates(1)
     return c[0]
   
-  def print_results(self, count = 1):
-    """print a pretty table
-
-    Args:
-        count (int, optional): Candidates count to display. Defaults to 10.
-    """
-    c = self.find_candidates(count=count)
-    x = PrettyTable()
-    x.field_names = ["hash", "occurences", "size", "paths", "content"]
-    x.align = "l"
-    
-    for l in c:
-      content = json.dumps(self.hash_to_content[l], sort_keys=True)
-      x.add_row([
-        l,
-        len(self.hash_to_path[l]),
-        self.hash_to_size[l],
-        "\n".join(self.hash_to_path[l][:10]),
-        content[:128]
-      ], divider=True)
-      
-    print(x)
-
 class Replacer:
   
   def __init__(self, data) -> None:
@@ -141,18 +119,45 @@ class Replacer:
       cursor_data[int(path_components[-1][1:-1])] = content
 
 
+def print_results(anchors_groups):
+  """print a pretty table
+
+  Args:
+      count (int, optional): Candidates count to display. Defaults to 10.
+  """
+
+  x = PrettyTable()
+  x.field_names = ["hash", "occurences", "size", "paths", "content"]
+  x.align = "l"
+  
+  for anchors in anchors_groups:
+    x.add_row([
+      anchors["hash"],
+      len(anchors["paths"]),
+      anchors["size"],
+      "\n".join(anchors["paths"][:10]),
+      json.dumps(anchors["content"], sort_keys=True)[:128]
+    ], divider=True)
+    
+  print(x)
+
 @click.command()
 @click.option("--file", prompt="yaml file path", help="")
 @click.option("--candidates", help="Just print candidates", default=False, is_flag=True)
 @click.option("--min-count", help="Occurences count filter", default=2)
 @click.option("--min-size", help="Content size filter", default=10)
 def main(file, candidates, min_count, min_size):
+  logger.info("Compressing {file}", file=file)
+
+  start_time = time.process_time()
+  
   with open(file, 'r') as file:
     origin_yaml = yaml.safe_load(file)
     
     anchors = {}
+    anchors_groups = []
     
-    for i in range(0, 1000):
+    for i in range(0, 100):
       compressor = Compressor(min_count, min_size)
 
       compressor.process_items('', origin_yaml)
@@ -161,26 +166,33 @@ def main(file, candidates, min_count, min_size):
       
       if len(l_candidates) == 0:
         break
-
-      if candidates:
-        compressor.print_results()
        
       c_hash = l_candidates[0]
       c_paths = compressor.hash_to_path[c_hash]
+      c_size = compressor.hash_to_size[c_hash]
+      c_content = compressor.hash_to_content[c_hash]
       
       replacer = Replacer(origin_yaml)
+
+      anchors_groups.append({"hash": c_hash, "paths": c_paths, "content": c_content, "size": c_size})
       
       for c_path in c_paths[1:]:
-        anchors[c_path] = compressor.hash_to_content[c_hash]
+        anchors[c_path] = c_content
         replacer.replace_path(c_path, f"__COMPRESSED__/{c_hash}" )
     
-    replacer = Replacer(origin_yaml)
-    
-    for anchor_path, anchor_content in anchors.items():
-      logger.debug("Create anchor at {path}", path=anchor_path)
-      replacer.replace_path(anchor_path, anchor_content)
+    end_time = time.process_time()
 
-    if not candidates:
+    logger.info("Done {i} iterations in {time} s", i=i, time=end_time - start_time)
+
+    if candidates:
+      print_results(anchors_groups)
+    else:
+      replacer = Replacer(origin_yaml)
+    
+      for anchor_path, anchor_content in anchors.items():
+        logger.debug("Create anchor at {path}", path=anchor_path)
+        replacer.replace_path(anchor_path, anchor_content)
+        
       print(yaml.dump(origin_yaml, default_flow_style=False))
   
 if __name__ == '__main__':
